@@ -68,7 +68,7 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
-GDB = $(TOOLPREFIX)gdb
+GDB = gdb-multiarch
 
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -DTEST
 
@@ -246,9 +246,8 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 	@echo "*** Now run 'gdb' in another window." 1>&2
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
-gdb: 
-	$(GDB)
-
+gdb: .gdbinit
+	$(GDB) -x .gdbinit
 ##
 ##  FOR testing lab grading script
 ##

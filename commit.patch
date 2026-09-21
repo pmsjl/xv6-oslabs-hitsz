@@ -1,0 +1,172 @@
+diff --git a/Makefile b/Makefile
+index df87a25..5882a1e 100644
+--- a/Makefile
++++ b/Makefile
+@@ -157,6 +157,10 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
++	$U/_sleep\
++	$U/_pingpong\
++	$U/_find\
++
+ 
+ 
+ ifeq ($(LAB),syscall)
+diff --git a/commands.gdb b/commands.gdb
+new file mode 100644
+index 0000000..16c0c3a
+--- /dev/null
++++ b/commands.gdb
+@@ -0,0 +1,7 @@
++break forkret
++continue
++p cpus[$tp]->proc->name
++break kernel/exec.c:92
++continue
++p cpus[$tp]->proc->name
++dashboard
+diff --git a/user/find.c b/user/find.c
+new file mode 100644
+index 0000000..f386d79
+--- /dev/null
++++ b/user/find.c
+@@ -0,0 +1,64 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++
++void find(char *path, char *name) {
++  struct dirent de;
++  struct stat st;
++  int fd;
++
++  if ((fd = open(path, 0)) < 0) {
++    fprintf(2, "find cannot open %s\n", path);
++    return;
++  }
++  if (fstat(fd, &st) < 0) {
++    fprintf(2, "find: cannot stat %s\n", path);
++    close(fd);
++    return;
++  }
++  char *p = path + strlen(path);
++  while (p > path && *(p - 1) != '/') {
++    p--;
++  }
++  if (strcmp(p, name) == 0) {
++    printf("%s\n", path);
++  }
++
++  if (st.type == T_FILE) {
++    close(fd);
++    return;
++  }
++
++  if (st.type == T_DIR) {
++    while (read(fd, &de, sizeof(de)) == sizeof(de)) {
++      if (de.inum == 0) {
++        continue;
++      }
++      if (strcmp(de.name, ".") == 0 || strcmp(de.name, "..") == 0) {
++        continue;
++      }
++      char buff[512];
++      char *p = buff;
++      strcpy(buff, path);
++      p += strlen(path);
++      *p++ = '/';
++      memmove(p, de.name, DIRSIZ);
++      p[DIRSIZ] = 0;
++      find(buff, name);
++    }
++    close(fd);
++    return;
++  }
++}
++
++int main(int argc, char *argv[]) {
++  if (argc != 3) {
++    printf("find needs two arguments!\n");
++    exit(1);
++  }
++  char *path = argv[1];
++  char *name = argv[2];
++  find(path, name);
++  exit(0);
++}
+diff --git a/user/pingpong.c b/user/pingpong.c
+new file mode 100644
+index 0000000..901831f
+--- /dev/null
++++ b/user/pingpong.c
+@@ -0,0 +1,46 @@
++#include "kernel/types.h"
++#include "user/user.h"
++
++int
++main(int argc, char *argv[])
++{
++    int p1[2];
++    int p2[2];
++    int father_pid = getpid();
++    char parent[1];
++    char child[1];
++    char b = 'p';
++
++    pipe(p1);
++    pipe(p2);
++
++    int pid = fork();
++    if (pid == 0)
++    {
++        close(p1[1]);
++        close(p2[0]);
++
++        read(p1[0], child, 1);
++        close(p1[0]);
++
++        fprintf(1, "%d: received ping from pid %d\n", getpid(), father_pid);
++        write(p2[1], child, 1);
++        close(p2[1]);
++        exit(0);
++    }
++    else
++    {
++        close(p1[0]);
++        close(p2[1]);
++
++        write(p1[1], &b, 1);
++        close(p1[1]);
++
++        read(p2[0], parent, 1);
++        fprintf(1, "%d: received pong from pid %d\n", father_pid, pid);
++        close(p2[0]);
++
++        wait(0);
++        exit(0);
++    }
++}
+diff --git a/user/sleep.c b/user/sleep.c
+new file mode 100644
+index 0000000..3b03127
+--- /dev/null
++++ b/user/sleep.c
+@@ -0,0 +1,16 @@
++#include "kernel/types.h"
++#include "user/user.h"
++
++int
++main(int argc, char *argv[])
++{
++  if(argc != 2){
++    printf("Sleep needs one argument!\n");
++    exit(-1);
++  }
++
++  int ticks = atoi(argv[1]);
++  sleep(ticks);
++  printf("Sleep %d\n", ticks);
++  exit(0);
++}
