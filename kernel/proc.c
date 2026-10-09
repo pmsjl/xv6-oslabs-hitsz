@@ -19,6 +19,11 @@ extern void forkret(void);
 static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
+static char *state_name(enum procstate state) {
+  static char *names[] = {"unused", "sleep", "runble", "run", "zombie"};
+  return state >= UNUSED && state <= ZOMBIE ? names[state] : "unknown";
+}
+
 extern char trampoline[];  // trampoline.S
 
 // initialize the proc table at boot time.
@@ -271,6 +276,7 @@ int fork(void) {
 // Caller must hold p->lock.
 void reparent(struct proc *p) {
   struct proc *pp;
+  int child_number = 0;
 
   for (pp = proc; pp < &proc[NPROC]; pp++) {
     // this code uses pp->parent without holding pp->lock.
@@ -281,6 +287,8 @@ void reparent(struct proc *p) {
       // pp->parent can't change between the check and the acquire()
       // because only the parent changes it, and we're the parent.
       acquire(&pp->lock);
+      exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n",
+                p->pid, child_number++, pp->pid, pp->name, state_name(pp->state));
       pp->parent = initproc;
       // we should wake up init here, but that would require
       // initproc->lock, which would be a deadlock, since we hold
@@ -338,6 +346,10 @@ void exit(int status) {
 
   acquire(&p->lock);
 
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
+            p->pid, original_parent->pid, original_parent->name,
+            state_name(original_parent->state));
+
   // Give any children to init.
   reparent(p);
 
@@ -356,10 +368,12 @@ void exit(int status) {
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int wait(uint64 addr) {
+int wait(uint64 addr, int flags) {
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
+
+  if (flags != 0 && flags != 1) return -1;
 
   // hold p->lock for the whole time to avoid lost
   // wakeups from a child's exit().
@@ -395,7 +409,7 @@ int wait(uint64 addr) {
     }
 
     // No point waiting if we don't have any children.
-    if (!havekids || p->killed) {
+    if (!havekids || p->killed || flags == 1) {
       release(&p->lock);
       return -1;
     }
