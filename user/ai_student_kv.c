@@ -25,8 +25,11 @@ ai_student_kv_begin_write(struct ai_session *session)
   ai_student_kv_name(name, session->worker);
   unlink(name);
   int fd = open(name, O_CREATE | O_WRONLY);
-  if(fd < 0)
+  if(fd < 0) {
+    // open may create the inode before file/fd allocation fails.
+    unlink(name);
     return -1;
+  }
   session->state[1] = fd + 1;
   session->state[2] = 1;
   return 0;

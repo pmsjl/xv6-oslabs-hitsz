@@ -28,6 +28,7 @@
 struct {
   struct spinlock eviction;
   struct buf buf[NBUF];
+  uint next_victim;
   struct {
     struct spinlock lock;
     struct buf *head;
@@ -93,16 +94,21 @@ bget(uint dev, uint blockno)
   }
   release(&bcache.bucket[target].lock);
 
-  for(uint donor = 0; donor < NBUCKET; donor++) {
+  // Round-robin across actual buffers: always starting at bucket 0 can
+  // repeatedly evict its newest idle entry while other buffers stay unused.
+  for(uint offset = 0; offset < NBUF; offset++) {
+    uint candidate = (bcache.next_victim + offset) % NBUF;
+    b = &bcache.buf[candidate];
+    uint donor = bucket_index(b->dev, b->blockno);
     uint first = donor < target ? donor : target;
     uint second = donor < target ? target : donor;
     acquire(&bcache.bucket[first].lock);
     if(first != second) acquire(&bcache.bucket[second].lock);
     struct buf **link = &bcache.bucket[donor].head;
-    while(*link && (*link)->refcnt != 0) link = &(*link)->next;
-    b = *link;
-    if(b) {
+    if(b->refcnt == 0) {
+      while(*link != b) link = &(*link)->next;
       *link = b->next;
+      bcache.next_victim = (candidate + 1) % NBUF;
       b->dev = dev;
       b->blockno = blockno;
       b->valid = 0;
@@ -174,4 +180,3 @@ bunpin(struct buf *b) {
   b->refcnt--;
   release(&bcache.bucket[index].lock);
 }
-
