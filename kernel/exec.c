@@ -17,6 +17,7 @@ int exec(char *path, char **argv) {
   struct inode *ip;
   struct proghdr ph;
   pagetable_t pagetable = 0, oldpagetable;
+  pagetable_t new_kernel = 0;
   struct proc *p = myproc();
 
   begin_op();
@@ -39,6 +40,7 @@ int exec(char *path, char **argv) {
     if (ph.type != ELF_PROG_LOAD) continue;
     if (ph.memsz < ph.filesz) goto bad;
     if (ph.vaddr + ph.memsz < ph.vaddr) goto bad;
+    if (ph.vaddr + ph.memsz > PLIC) goto bad;
     uint64 sz1;
     if ((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0) goto bad;
     sz = sz1;
@@ -56,6 +58,7 @@ int exec(char *path, char **argv) {
   // Use the second as the user stack.
   sz = PGROUNDUP(sz);
   uint64 sz1;
+  if (sz > PLIC - 2 * PGSIZE) goto bad;
   if ((sz1 = uvmalloc(pagetable, sz, sz + 2 * PGSIZE)) == 0) goto bad;
   sz = sz1;
   uvmclear(pagetable, sz - 2 * PGSIZE);
@@ -79,6 +82,9 @@ int exec(char *path, char **argv) {
   if (sp < stackbase) goto bad;
   if (copyout(pagetable, sp, (char *)ustack, (argc + 1) * sizeof(uint64)) < 0) goto bad;
 
+  new_kernel = proc_kpagetable(p->kstack, p->kstack_pa);
+  if (new_kernel == 0 || kvm_usercopy(pagetable, new_kernel, 0, sz) < 0) goto bad;
+
   // arguments to user main(argc, argv)
   // argc is returned via the system call return
   // value, which goes in a0.
@@ -91,15 +97,25 @@ int exec(char *path, char **argv) {
 
   // Commit to the user image.
   oldpagetable = p->pagetable;
+  pagetable_t old_kernel = p->kernel_pagetable;
+  push_off();
   p->pagetable = pagetable;
+  p->kernel_pagetable = new_kernel;
+  p->guard_page = sz - 2 * PGSIZE;
   p->sz = sz;
+  w_satp(MAKE_SATP(new_kernel));
+  sfence_vma();
+  pop_off();
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp;          // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+  kvmfree(old_kernel);
+  if (p->pid == 1) vmprint(p->pagetable);
 
   return argc;  // this ends up in a0, the first argument to main(argc, argv)
 
 bad:
+  if (new_kernel) kvmfree(new_kernel);
   if (pagetable) proc_freepagetable(pagetable, sz);
   if (ip) {
     iunlockput(ip);
