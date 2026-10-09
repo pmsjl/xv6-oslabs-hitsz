@@ -49,6 +49,38 @@ uint64 sys_yield(void) {
   return 0;
 }
 
+uint64 sys_seccomp_ctl(void) {
+  int operation;
+  uint64 argument;
+  if (argint(0, &operation) < 0 || argaddr(1, &argument) < 0) return -1;
+  struct proc *current = myproc();
+  if (operation == 0) {
+    current->seccomp_mask = argument;
+    current->seccomp_enabled = 1;
+    return 0;
+  }
+  if (operation == 1 && argument <= 0x7fffffffUL) {
+    current->max_children = argument;
+    return 0;
+  }
+  return -1;
+}
+
+uint64 sys_seccomp_getlog(void) {
+  uint64 buffer, length_address;
+  int capacity;
+  struct proc *current = myproc();
+  if (argaddr(0, &buffer) < 0 || argaddr(1, &length_address) < 0 ||
+      copyin(current->pagetable, (char *)&capacity, length_address, sizeof(capacity)) < 0 ||
+      capacity < 0) return -1;
+  int count = capacity < current->audit_count ? capacity : current->audit_count;
+  if ((count && copyout(current->pagetable, buffer, (char *)current->audit_log,
+                       count * sizeof(uint64)) < 0) ||
+      copyout(current->pagetable, length_address, (char *)&count, sizeof(count)) < 0)
+    return -1;
+  return 0;
+}
+
 uint64 sys_sbrk(void) {
   int addr;
   int n;

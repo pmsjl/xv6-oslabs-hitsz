@@ -101,6 +101,12 @@ static struct proc *allocproc(void) {
 
 found:
   p->pid = allocpid();
+  p->seccomp_mask = ~0UL;
+  p->seccomp_enabled = 0;
+  p->audit_count = 0;
+  memset(p->audit_log, 0, sizeof(p->audit_log));
+  p->max_children = -1;
+  p->child_count = 0;
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
@@ -235,6 +241,15 @@ int fork(void) {
   struct proc *np;
   struct proc *p = myproc();
 
+  acquire(&p->lock);
+  int children = 0;
+  for (struct proc *child = proc; child < &proc[NPROC]; child++)
+    if (child->parent == p) children++;
+  p->child_count = children;
+  int limited = p->max_children >= 0 && children >= p->max_children;
+  release(&p->lock);
+  if (limited) return -1;
+
   // Allocate process.
   if ((np = allocproc()) == 0) {
     return -1;
@@ -249,6 +264,9 @@ int fork(void) {
   np->sz = p->sz;
 
   np->parent = p;
+  np->seccomp_mask = p->seccomp_mask;
+  np->seccomp_enabled = p->seccomp_enabled;
+  np->max_children = p->max_children;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -268,6 +286,10 @@ int fork(void) {
   np->state = RUNNABLE;
 
   release(&np->lock);
+
+  acquire(&p->lock);
+  p->child_count++;
+  release(&p->lock);
 
   return pid;
 }
@@ -297,6 +319,7 @@ void reparent(struct proc *p) {
       release(&pp->lock);
     }
   }
+  p->child_count = 0;
 }
 
 // Exit the current process.  Does not return.
@@ -400,6 +423,7 @@ int wait(uint64 addr, int flags) {
             return -1;
           }
           freeproc(np);
+          if (p->child_count > 0) p->child_count--;
           release(&np->lock);
           release(&p->lock);
           return pid;
