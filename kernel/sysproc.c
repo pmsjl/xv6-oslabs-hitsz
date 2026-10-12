@@ -29,17 +29,15 @@ uint64 sys_wait(void) {
 
 uint64 sys_yield(void) {
   struct proc *current = myproc();
-  printf("Save the context of the process to the memory region from address %p to %p\n",
-         &current->context, &current->context + 1);
-  printf("Current running process pid is %d and user pc is %p\n",
-         current->pid, current->trapframe->epc);
+  printf("Save the context of the process to the memory region from address %p to %p\n", &current->context,
+         &current->context + 1);
+  printf("Current running process pid is %d and user pc is %p\n", current->pid, current->trapframe->epc);
   int index = current - proc;
   for (int offset = 1; offset < NPROC; offset++) {
-    struct proc *candidate = &proc[(index + offset) % NPROC];
+    struct proc *candidate = &proc[(offset + index) % NPROC];
     acquire(&candidate->lock);
     if (candidate->state == RUNNABLE) {
-      printf("Next runnable process pid is %d and user pc is %p\n",
-             candidate->pid, candidate->trapframe->epc);
+      printf("Next runnable process pid is %d and user pc is %p\n", candidate->pid, candidate->trapframe->epc);
       release(&candidate->lock);
       break;
     }
@@ -71,11 +69,10 @@ uint64 sys_seccomp_getlog(void) {
   int capacity;
   struct proc *current = myproc();
   if (argaddr(0, &buffer) < 0 || argaddr(1, &length_address) < 0 ||
-      copyin(current->pagetable, (char *)&capacity, length_address, sizeof(capacity)) < 0 ||
-      capacity < 0) return -1;
+      copyin(current->pagetable, (char *)&capacity, length_address, sizeof(capacity)) < 0 || capacity < 0)
+    return -1;
   int count = capacity < current->audit_count ? capacity : current->audit_count;
-  if ((count && copyout(current->pagetable, buffer, (char *)current->audit_log,
-                       count * sizeof(uint64)) < 0) ||
+  if ((count && copyout(current->pagetable, buffer, (char *)current->audit_log, count * sizeof(uint64)) < 0) ||
       copyout(current->pagetable, length_address, (char *)&count, sizeof(count)) < 0)
     return -1;
   return 0;
