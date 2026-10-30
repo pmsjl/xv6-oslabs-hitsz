@@ -100,7 +100,7 @@ kalloc(void)
       kmem[cpu].freelist = r->next;
       release(&kmem[cpu].lock);
     }
-  }
+  } 
   pop_off();
 
   if(r)
