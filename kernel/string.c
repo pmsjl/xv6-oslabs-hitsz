@@ -1,10 +1,23 @@
 #include "types.h"
 
 void *memset(void *dst, int c, uint n) {
-  char *cdst = (char *)dst;
-  int i;
-  for (i = 0; i < n; i++) {
-    cdst[i] = c;
+  typedef uint64 __attribute__((__may_alias__)) word_t;
+  uchar *p = dst;
+  uchar byte = (uchar)c;
+  uint64 word = (uint64)byte * 0x0101010101010101UL;
+
+  while (n > 0 && ((uint64)p & 7) != 0) {
+    *p++ = byte;
+    n--;
+  }
+  while (n >= sizeof(word_t)) {
+    *(word_t *)p = word;
+    p += sizeof(word_t);
+    n -= sizeof(word_t);
+  }
+  while (n > 0) {
+    *p++ = byte;
+    n--;
   }
   return dst;
 }

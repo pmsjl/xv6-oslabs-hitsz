@@ -206,12 +206,16 @@ uint64 kvmpa(uint64 va) {
 // allocate a needed page-table page.
 int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm) {
   uint64 a, last;
-  pte_t *pte;
+  pte_t *pte = 0;
 
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
   for (;;) {
-    if ((pte = walk(pagetable, a, 1)) == 0) return -1;
+    if (pte == 0 || PX(0, a) == 0) {
+      if ((pte = walk(pagetable, a, 1)) == 0) return -1;
+    } else {
+      pte++;
+    }
     if (*pte & PTE_V) panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if (a == last) break;
